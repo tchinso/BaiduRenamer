@@ -15,10 +15,10 @@ from tkinter import ttk
 
 APP_NAME = "BaiduRenamer"
 DEFAULT_DOWNLOAD_DIR = r"J:\BaiduNetdiskDownload"
-DEFAULT_BANDIZIP = r"C:\Program Files\Bandizip\Bandizip.exe"
+DEFAULT_BANDIZIP = r"C:\Program Files\Bandizip\bz.exe"
 DEFAULT_PASSWORD = "somisoft"
 
-ARCHIVE_EXTENSIONS = {".7z", ".zip", ".001", ".rar"}
+ARCHIVE_EXTENSIONS = {".7z", ".zip", ".zi", ".001", ".rar"}
 SECOND_PASS_EXTENSIONS = {".zi", ".zip"}
 PART_RAR_RE = re.compile(r"(^|[._ -])part(?P<number>\d+)$", re.IGNORECASE)
 
@@ -170,10 +170,19 @@ def change_extensions(folder: Path, recursive: bool, log) -> RenameStats:
     return stats
 
 
+def resolve_bandizip_executable(bandizip: Path) -> Path:
+    if bandizip.name.lower() == "bandizip.exe":
+        console_tool = bandizip.with_name("bz.exe")
+        if console_tool.is_file():
+            return console_tool
+    return bandizip
+
+
 def bandizip_command(bandizip: Path, archive: Path, output_dir: Path, password: str):
-    command = [str(bandizip), "x", str(archive), f"-o:{output_dir}"]
+    command = [str(resolve_bandizip_executable(bandizip)), "x", "-y", f"-o:{output_dir}"]
     if password:
         command.append(f"-p:{password}")
+    command.append(str(archive))
     return command
 
 
@@ -552,8 +561,5 @@ def main():
             pass
 
     app = MaengchamHelper()
-    app.mainloop()
-
-
-if __name__ == "__main__":
+    app.mainloop()__name__ == "__main__":
     main()
