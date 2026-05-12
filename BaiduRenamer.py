@@ -15,11 +15,11 @@ from tkinter import ttk
 
 APP_NAME = "BaiduRenamer"
 DEFAULT_DOWNLOAD_DIR = r"J:\BaiduNetdiskDownload"
-DEFAULT_BANDIZIP = r"C:\Program Files\Bandizip\bz.exe"
+DEFAULT_BANDIZIP = r"C:\Program Files\Bandizip\Bandizip.exe"
 DEFAULT_PASSWORD = "somisoft"
 
 ARCHIVE_EXTENSIONS = {".7z", ".zip", ".zi", ".001", ".rar"}
-SECOND_PASS_EXTENSIONS = {".zi", ".zip"}
+SECOND_PASS_EXTENSIONS = {".7z", ".zip", ".zi", ".rar"}
 PART_RAR_RE = re.compile(r"(^|[._ -])part(?P<number>\d+)$", re.IGNORECASE)
 
 
@@ -171,15 +171,11 @@ def change_extensions(folder: Path, recursive: bool, log) -> RenameStats:
 
 
 def resolve_bandizip_executable(bandizip: Path) -> Path:
-    if bandizip.name.lower() == "bandizip.exe":
-        console_tool = bandizip.with_name("bz.exe")
-        if console_tool.is_file():
-            return console_tool
     return bandizip
 
 
 def bandizip_command(bandizip: Path, archive: Path, output_dir: Path, password: str):
-    command = [str(resolve_bandizip_executable(bandizip)), "x", "-y", f"-o:{output_dir}"]
+    command = [str(resolve_bandizip_executable(bandizip)), "x", "-aoa", f"-o:{output_dir}"]
     if password:
         command.append(f"-p:{password}")
     command.append(str(archive))
@@ -189,13 +185,17 @@ def bandizip_command(bandizip: Path, archive: Path, output_dir: Path, password: 
 def run_bandizip(bandizip: Path, archive: Path, output_dir: Path, password: str):
     output_dir.mkdir(parents=True, exist_ok=True)
     encoding = locale.getpreferredencoding(False)
+    executable = resolve_bandizip_executable(bandizip)
+    creationflags = 0
+    if executable.name.lower() == "bz.exe":
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     completed = subprocess.run(
         bandizip_command(bandizip, archive, output_dir, password),
         capture_output=True,
         text=True,
         encoding=encoding,
         errors="replace",
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        creationflags=creationflags,
     )
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip()
@@ -561,5 +561,8 @@ def main():
             pass
 
     app = MaengchamHelper()
-    app.mainloop()__name__ == "__main__":
+    app.mainloop()
+
+
+if __name__ == "__main__":
     main()
