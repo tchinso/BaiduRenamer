@@ -895,7 +895,7 @@ namespace BaiduRenamer
 
     internal static class ArchiveProcessor
     {
-        private const long LargeExtensionlessThreshold = 100L * 1024L * 1024L;
+        private const long LargeSecondPassThreshold = 20L * 1024L * 1024L;
 
         public static void ExtractArchives(string folder, bool recursive, string bandizip, string password, Action<LogEntry> log)
         {
@@ -1054,23 +1054,35 @@ namespace BaiduRenamer
 
         private static bool IsSecondPassCandidate(FileInfo file)
         {
-            string suffix = PathRules.GetSuffix(file.FullName);
-            if (String.Equals(suffix, ".7z", StringComparison.OrdinalIgnoreCase) ||
-                String.Equals(suffix, ".zip", StringComparison.OrdinalIgnoreCase) ||
-                String.Equals(suffix, ".zi", StringComparison.OrdinalIgnoreCase) ||
-                String.Equals(suffix, ".rar", StringComparison.OrdinalIgnoreCase) ||
-                String.Equals(suffix, ".001", StringComparison.OrdinalIgnoreCase) ||
-                String.Equals(suffix, ".tif", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
+            return SecondPassTargetSuffix(PathRules.GetSuffix(file.FullName), file.Length) != null;
+        }
 
-            if (suffix.StartsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        private static string SecondPassTargetSuffix(string suffix, long length)
+        {
+            if (String.Equals(suffix, ".001", StringComparison.OrdinalIgnoreCase))
             {
-                return true;
+                return ".001";
             }
-
-            return suffix.Length == 0 && file.Length > LargeExtensionlessThreshold;
+            if (suffix.StartsWith(".7", StringComparison.OrdinalIgnoreCase))
+            {
+                return ".7z";
+            }
+            if (suffix.StartsWith(".z", StringComparison.OrdinalIgnoreCase))
+            {
+                return ".zip";
+            }
+            if (suffix.StartsWith(".r", StringComparison.OrdinalIgnoreCase))
+            {
+                return ".rar";
+            }
+            if (length >= LargeSecondPassThreshold &&
+                (suffix.Length == 0 ||
+                String.Equals(suffix, ".jpg", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(suffix, ".tif", StringComparison.OrdinalIgnoreCase)))
+            {
+                return ".zip";
+            }
+            return null;
         }
 
         internal static bool IsSecondPassCandidateForTest(string path)
@@ -1089,18 +1101,14 @@ namespace BaiduRenamer
             error = null;
 
             string suffix = PathRules.GetSuffix(archive);
-            bool extensionlessLarge = suffix.Length == 0 && File.Exists(archive) && new FileInfo(archive).Length > LargeExtensionlessThreshold;
-            bool shouldRename = String.Equals(suffix, ".zi", StringComparison.OrdinalIgnoreCase) ||
-                String.Equals(suffix, ".tif", StringComparison.OrdinalIgnoreCase) ||
-                (suffix.StartsWith(".zip", StringComparison.OrdinalIgnoreCase) && !String.Equals(suffix, ".zip", StringComparison.OrdinalIgnoreCase)) ||
-                extensionlessLarge;
-
-            if (!shouldRename)
+            long length = File.Exists(archive) ? new FileInfo(archive).Length : 0;
+            string targetSuffix = SecondPassTargetSuffix(suffix, length);
+            if (targetSuffix == null || String.Equals(suffix, targetSuffix, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            string target = suffix.Length == 0 ? archive + ".zip" : PathRules.WithSuffix(archive, ".zip");
+            string target = suffix.Length == 0 ? archive + targetSuffix : PathRules.WithSuffix(archive, targetSuffix);
             try
             {
                 if (PathRules.SamePath(archive, target))
@@ -1488,21 +1496,37 @@ namespace BaiduRenamer
 
                 string second001 = Path.Combine(root, "inner.001");
                 string tif = Path.Combine(root, "image.tif");
+                string jpg = Path.Combine(root, "photo.jpg");
+                string smallTif = Path.Combine(root, "small.tif");
+                string smallJpg = Path.Combine(root, "small.jpg");
                 string oddZip = Path.Combine(root, "신난다.zip만세");
+                string odd7z = Path.Combine(root, "seven.7other");
+                string oddRar = Path.Combine(root, "rar.r00");
                 string extensionlessSmall = Path.Combine(root, "small");
                 string extensionlessLarge = Path.Combine(root, "large");
                 File.WriteAllText(second001, "x");
-                File.WriteAllText(tif, "x");
+                File.WriteAllText(smallTif, "x");
+                File.WriteAllText(smallJpg, "x");
                 File.WriteAllText(oddZip, "x");
+                File.WriteAllText(odd7z, "x");
+                File.WriteAllText(oddRar, "x");
                 File.WriteAllText(extensionlessSmall, "x");
-                using (FileStream stream = File.Create(extensionlessLarge))
+                foreach (string largeFile in new string[] { tif, jpg, extensionlessLarge })
                 {
-                    stream.SetLength(100L * 1024L * 1024L + 1L);
+                    using (FileStream stream = File.Create(largeFile))
+                    {
+                        stream.SetLength(20L * 1024L * 1024L);
+                    }
                 }
 
                 ok &= ArchiveProcessor.IsSecondPassCandidateForTest(second001) ? 1 : 0;
                 ok &= ArchiveProcessor.IsSecondPassCandidateForTest(tif) ? 1 : 0;
+                ok &= ArchiveProcessor.IsSecondPassCandidateForTest(jpg) ? 1 : 0;
+                ok &= !ArchiveProcessor.IsSecondPassCandidateForTest(smallTif) ? 1 : 0;
+                ok &= !ArchiveProcessor.IsSecondPassCandidateForTest(smallJpg) ? 1 : 0;
                 ok &= ArchiveProcessor.IsSecondPassCandidateForTest(oddZip) ? 1 : 0;
+                ok &= ArchiveProcessor.IsSecondPassCandidateForTest(odd7z) ? 1 : 0;
+                ok &= ArchiveProcessor.IsSecondPassCandidateForTest(oddRar) ? 1 : 0;
                 ok &= !ArchiveProcessor.IsSecondPassCandidateForTest(extensionlessSmall) ? 1 : 0;
                 ok &= ArchiveProcessor.IsSecondPassCandidateForTest(extensionlessLarge) ? 1 : 0;
 
@@ -1511,8 +1535,17 @@ namespace BaiduRenamer
                 ok &= ArchiveProcessor.PrepareSecondPassArchiveForTest(tif, out prepared, out error) &&
                     PathRules.SamePath(prepared, Path.Combine(root, "image.zip")) &&
                     File.Exists(prepared) ? 1 : 0;
+                ok &= ArchiveProcessor.PrepareSecondPassArchiveForTest(jpg, out prepared, out error) &&
+                    PathRules.SamePath(prepared, Path.Combine(root, "photo.zip")) &&
+                    File.Exists(prepared) ? 1 : 0;
                 ok &= ArchiveProcessor.PrepareSecondPassArchiveForTest(oddZip, out prepared, out error) &&
                     PathRules.SamePath(prepared, Path.Combine(root, "신난다.zip")) &&
+                    File.Exists(prepared) ? 1 : 0;
+                ok &= ArchiveProcessor.PrepareSecondPassArchiveForTest(odd7z, out prepared, out error) &&
+                    PathRules.SamePath(prepared, Path.Combine(root, "seven.7z")) &&
+                    File.Exists(prepared) ? 1 : 0;
+                ok &= ArchiveProcessor.PrepareSecondPassArchiveForTest(oddRar, out prepared, out error) &&
+                    PathRules.SamePath(prepared, Path.Combine(root, "rar.rar")) &&
                     File.Exists(prepared) ? 1 : 0;
                 ok &= ArchiveProcessor.PrepareSecondPassArchiveForTest(extensionlessLarge, out prepared, out error) &&
                     PathRules.SamePath(prepared, extensionlessLarge + ".zip") &&
